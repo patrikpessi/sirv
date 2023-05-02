@@ -123,7 +123,7 @@ encode('should work when the request path contains encoded characters :: prod', 
 	}
 });
 
-encode(`should work when the request path contains space encoded :: dev`, async () => {
+encode('should work when the request path contains space encoded :: dev', async () => {
 	let server = utils.http({ dev:  true });
 
 	try {
@@ -136,7 +136,7 @@ encode(`should work when the request path contains space encoded :: dev`, async 
 	}
 });
 
-encode(`should work when the request path contains space encoded :: prod`, async () => {
+encode('should work when the request path contains space encoded :: prod', async () => {
 	let server = utils.http({ dev: false });
 
 	try {
@@ -144,6 +144,34 @@ encode(`should work when the request path contains space encoded :: prod`, async
 		assert.is(res.headers['content-type'], 'text/plain');
 		assert.is(res.data, 'with space.txt\n');
 		assert.is(res.statusCode, 200);
+	} finally {
+		server.close();
+	}
+});
+
+encode('should not treat "/foo%2Fbar.txt" the same as "/foo.bar.txt" path :: dev', async () => {
+	let server = utils.http({ dev: true });
+
+	try {
+		let res1 = await server.send('GET', '/about/index.htm');
+		assert.is(res1.statusCode, 200);
+
+		let res2 = await server.send('GET', '/about%2Findex.htm').catch(r => r);
+		assert.is(res2.statusCode, 404);
+	} finally {
+		server.close();
+	}
+});
+
+encode('should not treat "/foo%2Fbar.txt" the same as "/foo.bar.txt" path :: prod', async () => {
+	let server = utils.http({ dev: false });
+
+	try {
+		let res1 = await server.send('GET', '/about/index.htm');
+		assert.is(res1.statusCode, 200);
+
+		let res2 = await server.send('GET', '/about%2Findex.htm').catch(r => r);
+		assert.is(res2.statusCode, 404);
 	} finally {
 		server.close();
 	}
@@ -1017,16 +1045,30 @@ ranges('should assume the end-value is final byte when not included :: full', as
 	}
 });
 
-ranges('should throw `416` when range cannot be met (overflow)', async () => {
+ranges('should throw `416` when range start cannot be met (overflow)', async () => {
 	let server = utils.http();
 
 	try {
-		let headers = { Range: 'bytes=0-123456' };
+		let headers = { Range: 'bytes=123456-234567' };
 		let file = await utils.lookup('bundle.67329.js', 'utf8');
 		await server.send('GET', '/bundle.67329.js', { headers }).catch(err => {
 			assert.is(err.headers['content-range'], `bytes */${file.size}`);
 			assert.is(err.statusCode, 416);
 		});
+	} finally {
+		server.close();
+	}
+});
+
+ranges('should shrink range end if it cannot be met (overflow)', async () => {
+	let server = utils.http();
+
+	try {
+		let headers = { Range: 'bytes=10-123456' };
+		let file = await utils.lookup('bundle.67329.js', 'utf8');
+		let res = await server.send('GET', '/bundle.67329.js', { headers });
+		assert.is(res.headers['content-range'], `bytes 10-${file.size - 1}/${file.size}`);
+		assert.is(res.statusCode, 206);
 	} finally {
 		server.close();
 	}
